@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boa Tarde - Claudio</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#0a3d5c">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a3d5c;
+    font-family: 'Georgia', serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    width: 100%;
+    max-width: 420px;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+    position: relative;
+  }
+  canvas { display: block; width: 100%; }
+  .bottom {
+    background: #0d3a52;
+    padding: 16px;
+    text-align: center;
+  }
+  .data-label {
+    color: #7ad3ff;
+    font-size: 12px;
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+  }
+  .btn-share {
+    background: #25D366;
+    color: white;
+    border: none;
+    border-radius: 50px;
+    padding: 12px 30px;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+    width: 100%;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .btn-new {
+    background: #145a7a;
+    color: #7ad3ff;
+    border: 1px solid #2a8aaa;
+    border-radius: 50px;
+    padding: 10px 30px;
+    font-size: 13px;
+    cursor: pointer;
+    width: 100%;
+  }
+  .author {
+    color: #3a8aaa;
+    font-size: 11px;
+    margin-top: 10px;
+  }
+</style>
+</head>
+<body>
+<!-- DIGITAL LOCK -->
+<div id="digitalLockScreen" style="position:fixed;inset:0;background:#0f172a;color:#fff;z-index:999999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;font-family:-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;padding:24px;">
+  <div style="font-size:56px;">🔒</div>
+  <div id="digitalLockMsg" style="font-size:15px;max-width:280px;line-height:1.4;">Carregando...</div>
+  <button id="digitalLockBtn" style="padding:14px 30px;font-size:16px;border-radius:12px;border:none;background:#3b82f6;color:#fff;cursor:pointer;font-weight:600;">Desbloquear</button>
+</div>
+<script>
+(function(){
+  var LOCK_KEY = 'claudio_digital_cred_id';
+  var overlay = document.getElementById('digitalLockScreen');
+  var msg = document.getElementById('digitalLockMsg');
+  var btn = document.getElementById('digitalLockBtn');
+
+  function unlock(){ overlay.style.display = 'none'; }
+
+  function b64urlToBuf(b64url){
+    var b64 = b64url.replace(/-/g,'+').replace(/_/g,'/');
+    var pad = b64.length % 4 === 0 ? '' : '='.repeat(4 - (b64.length % 4));
+    var bin = atob(b64+pad);
+    var buf = new Uint8Array(bin.length);
+    for (var i=0;i<bin.length;i++) buf[i]=bin.charCodeAt(i);
+    return buf;
+  }
+  function bufToB64url(buf){
+    var bin=''; var bytes = new Uint8Array(buf);
+    for (var i=0;i<bytes.length;i++) bin+=String.fromCharCode(bytes[i]);
+    return btoa(bin).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  }
+
+  function register(){
+    msg.textContent = 'Cadastrando sua digital...';
+    var challenge = crypto.getRandomValues(new Uint8Array(32));
+    var userId = crypto.getRandomValues(new Uint8Array(16));
+    navigator.credentials.create({
+      publicKey: {
+        challenge: challenge,
+        rp: { name: 'Apps do Claudio' },
+        user: { id: userId, name: 'claudio', displayName: 'Claudio' },
+        pubKeyCredParams: [{alg:-7,type:'public-key'},{alg:-257,type:'public-key'}],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required' },
+        timeout: 60000,
+        attestation: 'none'
+      }
+    }).then(function(cred){
+      localStorage.setItem(LOCK_KEY, bufToB64url(cred.rawId));
+      unlock();
+    }).catch(function(e){
+      msg.textContent = 'Não foi possível cadastrar. Toque para tentar de novo.';
+      console.error(e);
+    });
+  }
+
+  function authenticate(credId){
+    msg.textContent = 'Toque no sensor de digital...';
+    var challenge = crypto.getRandomValues(new Uint8Array(32));
+    navigator.credentials.get({
+      publicKey: {
+        challenge: challenge,
+        allowCredentials: [{ id: b64urlToBuf(credId), type: 'public-key' }],
+        userVerification: 'required',
+        timeout: 60000
+      }
+    }).then(function(){ unlock(); })
+    .catch(function(e){
+      msg.textContent = 'Digital não reconhecida. Toque para tentar de novo.';
+      console.error(e);
+    });
+  }
+
+  function init(){
+    if (!window.PublicKeyCredential){
+      msg.textContent = 'Navegador sem suporte a digital. Acesso liberado.';
+      setTimeout(unlock, 1200);
+      return;
+    }
+    var credId = localStorage.getItem(LOCK_KEY);
+    if (credId){
+      msg.textContent = 'Toque para desbloquear com sua digital';
+      btn.textContent = 'Desbloquear';
+      btn.onclick = function(){ authenticate(credId); };
+    } else {
+      msg.textContent = 'Cadastre sua digital para proteger este app';
+      btn.textContent = 'Cadastrar digital';
+      btn.onclick = register;
+    }
+  }
+  init();
+})();
+</script>
+<!-- FIM DIGITAL LOCK -->
+
+<div class="card">
+  <canvas id="canvas" width="420" height="420"></canvas>
+  <div class="bottom">
+    <div class="data-label" id="data-label"></div>
+    <button class="btn-share" onclick="compartilhar()">
+      📲 Compartilhar no WhatsApp
+    </button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+    <button id="btn-claudio" onclick="setAssinatura('claudio')" style="padding:9px 4px;border-radius:50px;border:1.5px solid #2a8aaa;background:#145a7a;color:#7ad3ff;font-size:12px;cursor:pointer">👤 Claudio</button>
+    <button id="btn-irmao" onclick="setAssinatura('irmao')" style="padding:9px 4px;border-radius:50px;border:1.5px solid #29b6d8;background:#29b6d8;color:#fff;font-size:12px;cursor:pointer;font-weight:bold">🙏 Irmão Claudio</button>
+    <button id="btn-kimberly" onclick="setAssinatura('kimberly')" style="padding:9px 4px;border-radius:50px;border:1.5px solid #2a8aaa;background:#145a7a;color:#7ad3ff;font-size:12px;cursor:pointer">👨‍👧 Kimberly</button>
+    <button id="btn-priscila" onclick="setAssinatura('priscila')" style="padding:9px 4px;border-radius:50px;border:1.5px solid #2a8aaa;background:#145a7a;color:#7ad3ff;font-size:12px;cursor:pointer">❤️ Priscila</button>
+  </div>
+  <button class="btn-new" onclick="proximaMensagem()">
+      🔄 Nova mensagem
+    </button>
+    <div class="author">☀️ Boa Tarde por Irmão Claudio</div>
+  </div>
+</div>
+
+<script>
+const mensagensBiblicas = [
+  { frase: "Que a segunda metade\ndo seu dia seja tão\nabençoada quanto a primeira.", sub: "com renovação e fé" },
+  { frase: "Boa tarde! Que o Senhor\nrenove suas forças\npara o que ainda vem hoje.", sub: "com força renovada" },
+  { frase: "Pare um instante e\nagradeça: você chegou\naté aqui com a graça de Deus.", sub: "com gratidão sincera" },
+  { frase: "Que a paz de Cristo\nte acompanhe nesse\nmeio do caminho do dia.", sub: "com paz que excede" },
+  { frase: "Boa tarde! Deus não\nte deixou pela manhã,\nEle segue contigo agora.", sub: "com presença constante" },
+  { frase: "Respire fundo. A tarde\ntambém é tempo de\ngraça e de recomeço.", sub: "com leveza e fé" },
+  { frase: "Que a sabedoria de\nDeus guie suas decisões\nno restante do seu dia.", sub: "com sabedoria divina" },
+  { frase: "Boa tarde! Ainda há\ntempo de fazer o\nbem a alguém hoje.", sub: "com propósito renovado" },
+  { frase: "Descanse um pouco,\nconfie no Senhor e\nsiga com o coração leve.", sub: "com descanso em Deus" },
+  { frase: "Que a segunda parte\ndo seu dia carregue\na bênção que faltou de manhã.", sub: "com bênçãos em dobro" },
+  { frase: "Boa tarde! O Senhor\nrenova as suas misericórdias\na cada hora, não só de manhã.", sub: "com misericórdia renovada" },
+  { frase: "Que você encontre força\nno Senhor para\nterminar bem esse dia.", sub: "com força e fé" },
+  { frase: "A tarde é tempo\nde gratidão pelo\nque já foi vivido hoje.", sub: "com gratidão pelo caminho" },
+  { frase: "Boa tarde! Que a\nluz de Deus ilumine\no restante da sua jornada hoje.", sub: "com luz e direção" },
+  { frase: "Confie: o Senhor está\ntrabalhando mesmo nas\nhoras mais cansativas do dia.", sub: "com confiança e fé" },
+  { frase: "Que seu coração\nencontre descanso em\nDeus nessa pausa da tarde.", sub: "com descanso verdadeiro" },
+  { frase: "Boa tarde! Lembre-se:\nvocê não caminha\nsozinho, Deus vai contigo.", sub: "com companhia divina" },
+  { frase: "Que a tarde te\ntraga ânimo renovado\npara terminar o que começou.", sub: "com ânimo e fé" },
+  { frase: "Deus é fiel pela\nmanhã e também\nagora, no meio da tarde.", sub: "com fidelidade constante" },
+  { frase: "Boa tarde! Que a\npaz do Senhor acalme\nqualquer ansiedade desse dia.", sub: "com paz que acalma" },
+  { frase: "Persevere, o Senhor\nvê seu esforço\ndesde a manhã até agora.", sub: "com perseverança e fé" },
+  { frase: "Que essa tarde seja\nmarcada por pequenos\ngestos de bondade e amor.", sub: "com bondade em ação" },
+  { frase: "Boa tarde! Ainda dá\ntempo de sorrir e\nespalhar luz por onde passar.", sub: "com luz e alegria" },
+  { frase: "Que o cansaço da\ntarde não apague\na sua fé nem sua esperança.", sub: "com esperança renovada" },
+  { frase: "Deus te sustenta desde\no amanhecer e\nvai sustentar até o anoitecer.", sub: "com sustento diário" },
+  { frase: "Boa tarde! Que você\nencontre motivos de\ngratidão nesse meio do dia.", sub: "com gratidão no caminho" },
+  { frase: "Que a segunda parte\nda sua jornada hoje\nseja guiada pela paz de Deus.", sub: "com paz e direção" },
+  { frase: "Renove o fôlego,\na tarde também\né um presente de Deus.", sub: "com fôlego renovado" },
+  { frase: "Boa tarde! Que o\nSenhor te dê clareza\npara as decisões que ainda restam hoje.", sub: "com clareza e sabedoria" },
+  { frase: "Você já venceu metade\ndo dia com a\najuda de Deus. Siga em frente.", sub: "com vitória parcial e fé" },
+];
+
+const mensagensGerais = [
+  { frase: "Boa tarde! Que a\nsegunda parte do\nseu dia seja ainda melhor.", sub: "com energia renovada" },
+  { frase: "Já é tarde, respira\nfundo e aproveita\no resto do seu dia.", sub: "com leveza e calma" },
+  { frase: "Que essa pausa da\ntarde te dê ânimo\npra terminar tudo com o pé direito.", sub: "com ânimo em alta" },
+  { frase: "Boa tarde! Um café\nagora cai bem\npra recarregar as energias.", sub: "com uma pausa gostosa" },
+  { frase: "Metade do dia já\npassou, e olha só\nquanta coisa boa você já fez.", sub: "com orgulho do seu esforço" },
+  { frase: "Boa tarde! Que o\nresto do seu dia\nseja tão produtivo quanto leve.", sub: "com equilíbrio e foco" },
+  { frase: "Aproveita esse meio\nde tarde pra respirar\ne dar um resetzinho na mente.", sub: "com calma renovada" },
+  { frase: "Boa tarde! Que as\npróximas horas te tragam\nboas notícias e boas ideias.", sub: "com boas energias" },
+  { frase: "Só mais um pouco\ne o dia termina,\nvamos com tudo até o fim.", sub: "com força pra terminar bem" },
+  { frase: "Boa tarde! Que o\nsol da tarde te\nlembre de sorrir mais um pouco.", sub: "com sol no coração" },
+  { frase: "A tarde é uma\nboa hora pra dar\naquela repaginada no seu ânimo.", sub: "com ânimo renovado" },
+  { frase: "Boa tarde! Aproveita\no restinho do dia\npra fazer algo que te dê prazer.", sub: "com leveza no coração" },
+  { frase: "Que os próximos\nhorários corram bem\ne o dia termine tranquilo.", sub: "com tranquilidade" },
+  { frase: "Boa tarde! Já foi\numa manhã puxada?\nAgora é hora de dar a volta por cima.", sub: "com resiliência e bom humor" },
+  { frase: "Um bom lanche da\ntarde e a energia\nvolta com tudo.", sub: "com energia renovada" },
+  { frase: "Boa tarde! Que a\ntarde te traga leveza\ndepois de uma manhã corrida.", sub: "com leveza pós-correria" },
+  { frase: "Já dá pra ver\na luz no fim\ndo dia, sigamos firmes.", sub: "com foco no que falta" },
+  { frase: "Boa tarde! Que o\nresto do seu expediente\nseja tranquilo e produtivo.", sub: "com produtividade tranquila" },
+  { frase: "A tarde chegou trazendo\numa nova chance de\nfazer o dia valer a pena.", sub: "com renovação de ânimo" },
+  { frase: "Boa tarde! Que essa\nsegunda metade do dia\nseja recheada de boas surpresas.", sub: "com boas surpresas" },
+  { frase: "Respira, alonga um\npouco e segue com\ndisposição pro resto do dia.", sub: "com disposição renovada" },
+  { frase: "Boa tarde! Já é\nhora de comemorar\ntudo que você já resolveu hoje.", sub: "com reconhecimento do esforço" },
+  { frase: "Que o cansaço do\nmeio do dia dê\nlugar a uma nova disposição.", sub: "com nova disposição" },
+  { frase: "Boa tarde! Aproveite\nessa pausa pra se\nreconectar com o que importa.", sub: "com presença e foco" },
+  { frase: "Faltam só algumas\nhoras, e você já\nchegou até aqui muito bem.", sub: "com orgulho do percurso" },
+  { frase: "Boa tarde! Que a\ntarde seja tão boa\nquanto o cafezinho que você merece.", sub: "com um gostinho especial" },
+  { frase: "Segue o jogo, o\nresto do dia também\ntem coisa boa te esperando.", sub: "com expectativa positiva" },
+  { frase: "Boa tarde! Que você\ntermine o dia com\na sensação de dever cumprido.", sub: "com dever cumprido" },
+  { frase: "Um respiro agora,\ne o resto do\ndia fica bem mais leve.", sub: "com leveza renovada" },
+  { frase: "Boa tarde! Que a\nenergia da tarde te\nleve até o fim do dia com o pé direito.", sub: "com energia até o fim" },
+];
+
+const mensagensKimberly = [
+  { frase: "Boa tarde, minha filha!\nQue o resto do\nseu dia seja tão bom quanto você.", sub: "com carinho de pai" },
+  { frase: "Kimberly, filha, espero\nque sua tarde esteja\nleve e cheia de coisas boas.", sub: "com carinho e torcida" },
+  { frase: "Boa tarde, princesa!\nJá deu um tempinho\npra respirar hoje?", sub: "com cuidado de pai" },
+  { frase: "Que a sua tarde\nrenda bons frutos,\nfilha, seu pai torce por você.", sub: "com torcida do seu pai" },
+  { frase: "Boa tarde, Kimberly!\nSeu pai está pensando\nem você nesse meio de dia.", sub: "com pensamento carinhoso" },
+  { frase: "Filha, que o resto\ndo dia te traga\num sorriso bonito no rosto.", sub: "com desejo de alegria" },
+  { frase: "Boa tarde, minha filha!\nVocê já fez muita\ncoisa boa hoje, orgulho do seu pai.", sub: "com orgulho de sempre" },
+  { frase: "Kimberly, que a\ntarde seja leve e\nvocê chegue tranquila até o fim do dia.", sub: "com leveza e carinho" },
+  { frase: "Boa tarde, princesa!\nLembra que seu pai\nestá sempre na torcida por você.", sub: "com apoio incondicional" },
+  { frase: "Filha, que essa\nsegunda parte do dia\nseja tão especial quanto você é.", sub: "com carinho verdadeiro" },
+  { frase: "Boa tarde, Kimberly!\nQue você tenha um\nfim de tarde tranquilo e feliz.", sub: "com paz e alegria" },
+  { frase: "Que hoje à tarde\nvocê sinta o quanto\nseu pai se orgulha de você, filha.", sub: "com orgulho declarado" },
+  { frase: "Boa tarde, minha filha!\nEspero que seu dia\nesteja sendo tão bom quanto você merece.", sub: "com carinho de sempre" },
+  { frase: "Kimberly, filha, que\nvocê consiga terminar\no dia com o coração leve.", sub: "com leveza no coração" },
+  { frase: "Boa tarde, princesa!\nSeu pai manda um\nabraço apertado nesse meio de tarde.", sub: "com abraço à distância" },
+  { frase: "Filha, que essa tarde\nseja recheada de\npequenas vitórias e boas notícias.", sub: "com boas notícias" },
+  { frase: "Boa tarde, Kimberly!\nVocê é o orgulho\nda tarde do seu pai também.", sub: "com orgulho constante" },
+  { frase: "Que o restinho do\nseu dia seja tranquilo,\nminha filha querida.", sub: "com tranquilidade e carinho" },
+  { frase: "Boa tarde, minha filha!\nEspero que esteja\ntudo bem com você nesse momento.", sub: "com cuidado e atenção" },
+  { frase: "Kimberly, que sua\ntarde seja tão\nbonita quanto o seu coração.", sub: "com admiração de pai" },
+  { frase: "Boa tarde, princesa!\nSeu pai só quer\nsaber: como está seu dia?", sub: "com carinho e presença" },
+  { frase: "Filha, que o cansaço\nda tarde não apague\no seu sorriso lindo.", sub: "com desejo de leveza" },
+  { frase: "Boa tarde, Kimberly!\nVocê está indo muito\nbem, continue assim, filha.", sub: "com incentivo de pai" },
+  { frase: "Que essa tarde\nte traga paz e\numa boa dose de ânimo, minha filha.", sub: "com paz e ânimo" },
+  { frase: "Boa tarde, princesa!\nSeu pai está na\ntorcida pelo resto do seu dia.", sub: "com torcida constante" },
+  { frase: "Filha, que você\ntermine essa tarde\ncom a sensação de dever cumprido.", sub: "com reconhecimento sincero" },
+  { frase: "Boa tarde, Kimberly!\nQue Deus abençoe\ncada hora que ainda falta do seu dia.", sub: "com bênção de pai" },
+  { frase: "Que o seu fim\nde tarde seja tão\ndoce quanto você é, filha.", sub: "com carinho doce" },
+  { frase: "Boa tarde, minha filha!\nSaiba que seu pai\npensa em você o dia inteiro.", sub: "com pensamento constante" },
+  { frase: "Kimberly, que essa\ntarde seja mais um\ncapítulo bonito da sua história.", sub: "com carinho no caminho" },
+];
+
+const mensagensPriscila = [
+  { frase: "Boa tarde, meu amor!\nQue o resto do\nseu dia seja tão lindo quanto você.", sub: "com amor de sempre" },
+  { frase: "Priscila, só passando\npra dizer que penso\nem você nesse meio de tarde.", sub: "com saudade de perto" },
+  { frase: "Boa tarde! Espero\nque sua tarde esteja\nsendo tão boa quanto você merece.", sub: "com carinho sincero" },
+  { frase: "Meu amor, que essa\nsegunda parte do dia\nseja leve e cheia de coisas boas.", sub: "com leveza e amor" },
+  { frase: "Boa tarde, Priscila!\nJá parou um pouquinho\npra respirar hoje?", sub: "com cuidado e atenção" },
+  { frase: "Que a tarde te\ntraga tanta paz quanto\nvocê traz pra minha vida.", sub: "com paz e gratidão" },
+  { frase: "Boa tarde, meu amor!\nEspero que o seu\ndia esteja indo bem até aqui.", sub: "com carinho constante" },
+  { frase: "Priscila, seu abraço\nfaz muita falta nesse\nmeio de tarde corrido.", sub: "com saudade sincera" },
+  { frase: "Boa tarde! Que você\ntermine o dia com\na mesma leveza que começou.", sub: "com leveza renovada" },
+  { frase: "Meu amor, que a\ntarde seja gentil\ncom você, como você é comigo.", sub: "com gentileza e amor" },
+  { frase: "Boa tarde, Priscila!\nEstou na torcida\npelo resto do seu dia.", sub: "com torcida de amor" },
+  { frase: "Que o cansaço da\ntarde não tire o\nseu sorriso lindo, meu amor.", sub: "com desejo de alegria" },
+  { frase: "Boa tarde! Você é\na melhor parte\ndo meu dia, mesmo à distância.", sub: "com amor declarado" },
+  { frase: "Priscila, que essa\ntarde renda pra você\ntudo que precisar resolver.", sub: "com força e apoio" },
+  { frase: "Boa tarde, meu amor!\nMal posso esperar\npra te ver depois desse dia.", sub: "com saudade e amor" },
+  { frase: "Que a segunda parte\ndo seu dia seja\ntão especial quanto você é pra mim.", sub: "com carinho profundo" },
+  { frase: "Boa tarde, Priscila!\nEspero que esteja\ntudo tranquilo com você agora.", sub: "com cuidado e presença" },
+  { frase: "Meu amor, que você\nencontre um tempinho\npra respirar nessa correria da tarde.", sub: "com carinho e cuidado" },
+  { frase: "Boa tarde! Você\nfaz meus dias mais\nbonitos, mesmo de longe.", sub: "com amor sincero" },
+  { frase: "Priscila, que essa\ntarde seja mais um\ncapítulo bom da nossa história.", sub: "com futuro e amor" },
+  { frase: "Boa tarde, meu amor!\nQue tudo corra bem\nno restinho do seu dia.", sub: "com desejo de paz" },
+  { frase: "Que a tarde te\ntraga tanta calma\nquanto você me traz, meu amor.", sub: "com calma e gratidão" },
+  { frase: "Boa tarde, Priscila!\nSeu carinho é o\nque me sustenta nesse meio de dia.", sub: "com gratidão pela parceria" },
+  { frase: "Meu amor, que o\nresto do seu dia\nseja tão gostoso quanto sua companhia.", sub: "com carinho e companhia" },
+  { frase: "Boa tarde! Você é\nminha paz no\nmeio de qualquer tarde corrida.", sub: "com paz e amor" },
+  { frase: "Priscila, que essa\ntarde renove suas\nforças pro que ainda vem, meu amor.", sub: "com força renovada" },
+  { frase: "Boa tarde, meu amor!\nJá estou contando\nas horas pra te encontrar.", sub: "com saudade e ansiedade boa" },
+  { frase: "Que a tarde seja\ntão suave com você\nquanto você é comigo, meu amor.", sub: "com suavidade e amor" },
+  { frase: "Boa tarde, Priscila!\nVocê merece uma tarde\ntão boa quanto o seu coração.", sub: "com admiração sincera" },
+  { frase: "Meu amor, que esse\nfim de tarde\nseja tranquilo e o encontro nosso, gostoso.", sub: "com expectativa de amor" },
+];
+
+const TEMAS = [
+  { ceu1: '#1e6fa8', ceu2: '#4aa8d8', sol: '#FFE066', horizonte: '#FFD54A', frase_cor: '#FFFFFF', sub_cor: '#FFF3B0' },
+  { ceu1: '#0d7a8c', ceu2: '#2aa8b8', sol: '#FFEE88', horizonte: '#FFD166', frase_cor: '#FFFFFF', sub_cor: '#FFF3B0' },
+  { ceu1: '#2a6f9e', ceu2: '#5aa8d0', sol: '#FFD966', horizonte: '#FF9F4A', frase_cor: '#FFFAF0', sub_cor: '#FFE8A3' },
+  { ceu1: '#144d7a', ceu2: '#3a8ab8', sol: '#FFE9A8', horizonte: '#FFC94A', frase_cor: '#FFFFFF', sub_cor: '#FFEAAA' },
+  { ceu1: '#0a5a6e', ceu2: '#2a9ab0', sol: '#FFEA9E', horizonte: '#FFB84A', frase_cor: '#F5FFFA', sub_cor: '#FFF0B8' },
+];
+
+let indexAtual = -1;
+
+function getMensagens() {
+  if (assinatura === 'claudio') return mensagensGerais;
+  if (assinatura === 'kimberly') return mensagensKimberly;
+  if (assinatura === 'priscila') return mensagensPriscila;
+  return mensagensBiblicas;
+}
+
+function desenharCena(msg, tema) {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const W = 420, H = 420;
+
+  // Gradiente céu (tarde, sem estrelas)
+  const gradCeu = ctx.createLinearGradient(0, 0, 0, H * 0.75);
+  gradCeu.addColorStop(0, tema.ceu1);
+  gradCeu.addColorStop(0.55, tema.ceu2);
+  gradCeu.addColorStop(1, tema.horizonte);
+  ctx.fillStyle = gradCeu;
+  ctx.fillRect(0, 0, W, H);
+
+  // Nuvens leves
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  const nuvens = [[70,70,34],[300,50,26],[200,95,22],[350,110,18]];
+  nuvens.forEach(([x,y,r]) => {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI*2);
+    ctx.arc(x+r*0.8, y+4, r*0.7, 0, Math.PI*2);
+    ctx.arc(x-r*0.8, y+6, r*0.6, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // Sol (posição alta, típica de tarde)
+  const solX = W / 2, solY = H * 0.34;
+  const gradSol = ctx.createRadialGradient(solX, solY, 0, solX, solY, 58);
+  gradSol.addColorStop(0, '#FFFFFF');
+  gradSol.addColorStop(0.35, tema.sol);
+  gradSol.addColorStop(1, tema.horizonte);
+  ctx.fillStyle = gradSol;
+  ctx.beginPath();
+  ctx.arc(solX, solY, 52, 0, Math.PI*2);
+  ctx.fill();
+
+  // Raios do sol
+  ctx.strokeStyle = 'rgba(255,240,180,0.45)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 16; i++) {
+    const ang = (i * Math.PI * 2) / 16;
+    ctx.beginPath();
+    ctx.moveTo(solX + Math.cos(ang)*58, solY + Math.sin(ang)*58);
+    ctx.lineTo(solX + Math.cos(ang)*135, solY + Math.sin(ang)*135);
+    ctx.stroke();
+  }
+
+  // Colinas (verde vívido de tarde)
+  ctx.fillStyle = '#0a4a3a';
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  ctx.lineTo(0, H*0.74);
+  ctx.quadraticCurveTo(W*0.25, H*0.60, W*0.5, H*0.67);
+  ctx.quadraticCurveTo(W*0.75, H*0.74, W, H*0.64);
+  ctx.lineTo(W, H);
+  ctx.fill();
+
+  // Árvores esquerda
+  [[30,H*0.74],[60,H*0.70],[90,H*0.72]].forEach(([x,y]) => {
+    ctx.fillStyle = '#0a4a3a';
+    ctx.beginPath();
+    ctx.moveTo(x, y-40);
+    ctx.lineTo(x-12, y);
+    ctx.lineTo(x+12, y);
+    ctx.fill();
+  });
+
+  // Árvores direita
+  [[W-30,H*0.67],[W-60,H*0.64],[W-90,H*0.69]].forEach(([x,y]) => {
+    ctx.fillStyle = '#0a4a3a';
+    ctx.beginPath();
+    ctx.moveTo(x, y-40);
+    ctx.lineTo(x-12, y);
+    ctx.lineTo(x+12, y);
+    ctx.fill();
+  });
+
+  // Texto "* que a tarde de hoje seja *"
+  ctx.fillStyle = tema.sub_cor;
+  ctx.font = 'italic 14px Georgia';
+  ctx.textAlign = 'center';
+  ctx.fillText('* que a tarde de hoje seja *', W/2, 80);
+
+  // BOA TARDE
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.font = 'bold 50px Georgia';
+  ctx.fillText('Boa Tarde', W/2+2, 142);
+  ctx.fillStyle = tema.frase_cor;
+  ctx.font = 'bold 50px Georgia';
+  ctx.fillText('Boa Tarde', W/2, 140);
+
+  // Sub
+  ctx.fillStyle = tema.sub_cor;
+  ctx.font = 'italic 20px Georgia';
+  ctx.fillText(msg.sub, W/2, 172);
+
+  // Linha
+  ctx.strokeStyle = tema.sub_cor;
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.5;
+  ctx.beginPath();
+  ctx.moveTo(W/2 - 140, 182);
+  ctx.lineTo(W/2 + 140, 182);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // Frase
+  ctx.fillStyle = tema.frase_cor;
+  ctx.font = '15px Georgia';
+  const linhas = msg.frase.split('\n');
+  linhas.forEach((linha, i) => {
+    ctx.fillText(linha, W/2, 210 + i * 24);
+  });
+}
+
+function mostrarMensagem(index) {
+  const lista = getMensagens();
+  const msg = lista[index % lista.length];
+  const tema = TEMAS[index % TEMAS.length];
+  desenharCena(msg, tema);
+  indexAtual = index;
+}
+
+function sortearSemRepetir() {
+  const lista = getMensagens();
+  const chave = 'boatarde_usados_' + assinatura;
+  let usados = [];
+  try { usados = JSON.parse(localStorage.getItem(chave)) || []; } catch(e) { usados = []; }
+  if (!Array.isArray(usados) || usados.length >= lista.length) usados = [];
+  const disponiveis = lista.map((_, i) => i).filter(i => !usados.includes(i));
+  const escolhido = disponiveis[Math.floor(Math.random() * disponiveis.length)];
+  usados.push(escolhido);
+  try { localStorage.setItem(chave, JSON.stringify(usados)); } catch(e) {}
+  mostrarMensagem(escolhido);
+}
+
+function proximaMensagem() {
+  sortearSemRepetir();
+}
+
+let assinatura = 'irmao';
+
+function setAssinatura(tipo) {
+  assinatura = tipo;
+  ['claudio', 'irmao', 'kimberly', 'priscila'].forEach(t => {
+    const btn = document.getElementById('btn-' + t);
+    const ativo = t === tipo;
+    btn.style.background = ativo ? '#29b6d8' : '#145a7a';
+    btn.style.color = ativo ? '#fff' : '#7ad3ff';
+    btn.style.fontWeight = ativo ? 'bold' : 'normal';
+    btn.style.borderColor = ativo ? '#29b6d8' : '#2a8aaa';
+  });
+  sortearSemRepetir();
+}
+
+function compartilhar() {
+  const lista = getMensagens();
+  const msg = lista[indexAtual % lista.length];
+  const nome = assinatura === 'irmao' ? 'Irmão Claudio 🙏' : (assinatura === 'kimberly' ? 'Papai ❤️' : (assinatura === 'priscila' ? 'Seu amor ❤️' : 'Claudio 😊'));
+  const texto = `☀️ *Boa Tarde!* ☀️\n\n_${msg.sub}_\n\n${msg.frase.replace(/\n/g, ' ')}\n\n✨ _Enviado com carinho por ${nome}_`;
+  const canvas = document.getElementById('canvas');
+
+  if (navigator.canShare) {
+    canvas.toBlob(async (blob) => {
+      const file = new File([blob], 'boatarde.png', { type: 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], text: texto });
+          return;
+        } catch(e) {
+          // usuário cancelou ou erro, cai no fallback
+        }
+      }
+      const url = `https://wa.me/?text=${encodeURIComponent(texto)}`;
+      window.open(url, '_blank');
+    }, 'image/png');
+  } else {
+    const url = `https://wa.me/?text=${encodeURIComponent(texto)}`;
+    window.open(url, '_blank');
+  }
+}
+
+// Atualizar data
+const agora = new Date();
+const dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+document.getElementById('data-label').textContent = 
+  `${dias[agora.getDay()]}, ${agora.getDate()} de ${meses[agora.getMonth()]} de ${agora.getFullYear()}`;
+
+// Mostrar mensagem sorteada (sem repetir)
+sortearSemRepetir();
+</script>
+</body>
+</html>
